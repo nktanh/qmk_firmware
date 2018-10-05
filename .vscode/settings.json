@@ -5,13 +5,40 @@
     // Configure glob patterns for excluding files and folders.
     "files.exclude": {
         "**/.build": true,
-        "**/*.hex": true
+        "**/*.hex": true,
+        "**/keyboards": false,
+        "**/keyboards/.*": true,
+        "**/keyboards/[123456789abcdefghijklnopqrstuvwxyz]*": true,
+        "**/keyboards/m[123456789bcdefghijklmnopqrstuvwxyz]*": true,
     },
     "files.associations": {
         "*.h": "c",
         "*.c": "c",
         "*.cpp": "cpp",
         "*.hpp": "cpp",
-        "xstddef": "c"
+        "xstddef": "c",
+        "system_error": "c",
+        "functional": "c",
+        "xlocmon": "c",
+        "xtr1common": "c",
+        "algorithm": "c",
+        "chrono": "c",
+        "limits": "c",
+        "random": "c",
+        "ostream": "c",
+        "ios": "c",
+        "xiosbase": "c",
+        "xhash": "c",
+        "xtree": "c",
+        "xutility": "c",
+        "xlocale": "c",
+        "array": "c",
+        "deque": "c",
+        "forward_list": "c",
+        "initializer_list": "c",
+        "list": "c",
+        "vector": "c",
+        "xstring": "c",
+        "cmath": "c"
     }
 }
