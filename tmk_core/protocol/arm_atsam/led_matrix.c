@@ -378,6 +378,9 @@ void led_react_op(uint8_t fcur, uint8_t fmax, uint8_t scan, led_setup_t *f, floa
     desired_interpolation[write_buffer][scan] = value - 0.15f * value;
 
     // Act on LED
+    if(r_scan == 255 && value < 0.01f) {
+      value = 0.01f;
+    }
     rgb_out[0] = (f[0].rs) + value * (f[0].re - f[0].rs);
     rgb_out[1] = (f[0].gs) + value * (f[0].ge - f[0].gs);
     rgb_out[2] = (f[0].bs) + value * (f[0].be - f[0].bs);
