@@ -329,7 +329,7 @@ void led_react_op(uint8_t fcur, uint8_t fmax, uint8_t scan, led_setup_t *f, floa
     // rim lights / underglow is scan code 255
     if(scan == 255) {
       // figure out which value currently is higher, use that instead
-      value = max(desired_interpolation[read_buffer][0], desired_interpolation[0][87]);
+      value = desired_interpolation[0][87];
       // ignore some singular inputs to smooth out some of the flickering
       if(value < (underglow_inc * 1.5f)) {
         value = 0;
@@ -337,6 +337,7 @@ void led_react_op(uint8_t fcur, uint8_t fmax, uint8_t scan, led_setup_t *f, floa
     } else {
       value = desired_interpolation[read_buffer][scan];
     }
+    /*
     // the scan point to the left of this position
     uint8_t r_scan = scan;
 
@@ -374,12 +375,17 @@ void led_react_op(uint8_t fcur, uint8_t fmax, uint8_t scan, led_setup_t *f, floa
     float r_value = desired_interpolation[read_buffer][r_scan];
     // now fill yourself up
     value = max(r_value * 0.85f, value);
-    // calculate a new interpolation step
-    desired_interpolation[write_buffer][scan] = value - 0.15f * value;
-
-    // Act on LED
-    if(r_scan == 255 && value < 0.01f) {
-      value = 0.01f;
+    */
+    if (scan != 255) {
+      // calculate a new interpolation step
+      desired_interpolation[write_buffer][scan] = value - 0.3f * value;
+    } else {
+      // Act on LED
+      if (value > 1.0f) {
+        value = 1.0f;
+      } else if (value < (1.0f / 128.0f)) {
+        value = 1.0f / 128.0f;
+      }
     }
     rgb_out[0] = (f[0].rs) + value * (f[0].re - f[0].rs);
     rgb_out[1] = (f[0].gs) + value * (f[0].ge - f[0].gs);
@@ -420,8 +426,8 @@ void led_matrix_run(led_setup_t *f)
           uint8_t temp = write_buffer;
           write_buffer = read_buffer;
           read_buffer = temp;
+          desired_interpolation[0][87] = max(0, desired_interpolation[0][87] - underglow_dec);
         }
-        desired_interpolation[0][87] = max(0, desired_interpolation[0][87] - underglow_dec);
     }
 
     uint8_t fcur = 0;
@@ -592,4 +598,3 @@ void led_matrix_task(void)
         //m15_on; //debug profiling
     }
 }
-
