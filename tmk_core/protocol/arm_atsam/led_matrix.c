@@ -15,6 +15,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "arm_atsam_protocol.h"
 #include "tmk_core/common/led.h"
 #include <string.h>
+#include <math.h>
 
 void SERCOM1_0_Handler( void )
 {
@@ -253,143 +254,58 @@ uint8_t led_lighting_mode;
 issi3733_led_t *led_cur;
 uint8_t led_per_run = 15;
 float breathe_mult;
-uint8_t led_anim_mode = 0;
 
 // this has far more entries than it needs, but it's far easier to linearize
 // that way. The higest scan code seems to be 156 as seen in config_led.h
 // edit: this is now a double buffer to allow for some lookup trickery on fixed
 // timed steps.
-float desired_interpolation[][88] = {{0}, {0}};
+float desired_interpolation[][88] = {{0}, {0}, {0}, {0}, {0}, {0}};
 uint8_t write_buffer = 0;
 uint8_t read_buffer = 1;
 
-void led_gradient_op(uint8_t fcur, uint8_t fmax, led_setup_t *f, float* rgb_out) {
-    for (fcur = 0; fcur < fmax; fcur++)
-    {
-        float px = led_cur->px;
-        float pxmod;
-        pxmod = (float)(disp.frame % (uint32_t)(1000.0f / led_animation_speed)) / 10.0f * led_animation_speed;
-
-        //Add in any moving effects
-        if ((!led_animation_direction && f[fcur].ef & EF_SCR_R) || (led_animation_direction && (f[fcur].ef & EF_SCR_L)))
-        {
-            pxmod *= 100.0f;
-            pxmod = (uint32_t) pxmod % 10000;
-            pxmod /= 100.0f;
-
-            px -= pxmod;
-
-            if (px > 100) px -= 100;
-            else if (px < 0) px += 100;
-        }
-        else if ((!led_animation_direction && f[fcur].ef & EF_SCR_L) || (led_animation_direction && (f[fcur].ef & EF_SCR_R)))
-        {
-            pxmod *= 100.0f;
-            pxmod = (uint32_t) pxmod % 10000;
-            pxmod /= 100.0f;
-            px += pxmod;
-
-            if (px > 100) px -= 100;
-            else if (px < 0) px += 100;
-        }
-
-        //Check if LED's px is in current frame
-        if (px < f[fcur].hs) continue;
-        if (px > f[fcur].he) continue;
-        //note: < 0 or > 100 continue
-
-        //Calculate the px within the start-stop percentage for color blending
-        px = (px - f[fcur].hs) / (f[fcur].he - f[fcur].hs);
-
-        //Add in any color effects
-        if (f[fcur].ef & EF_OVER)
-        {
-            rgb_out[0] = (px * (f[fcur].re - f[fcur].rs)) + f[fcur].rs;// + 0.5;
-            rgb_out[1] = (px * (f[fcur].ge - f[fcur].gs)) + f[fcur].gs;// + 0.5;
-            rgb_out[2] = (px * (f[fcur].be - f[fcur].bs)) + f[fcur].bs;// + 0.5;
-        }
-        else if (f[fcur].ef & EF_SUBTRACT)
-        {
-            rgb_out[0] -= (px * (f[fcur].re - f[fcur].rs)) + f[fcur].rs;// + 0.5;
-            rgb_out[1] -= (px * (f[fcur].ge - f[fcur].gs)) + f[fcur].gs;// + 0.5;
-            rgb_out[2] -= (px * (f[fcur].be - f[fcur].bs)) + f[fcur].bs;// + 0.5;
-        }
-        else
-        {
-            rgb_out[0] += (px * (f[fcur].re - f[fcur].rs)) + f[fcur].rs;// + 0.5;
-            rgb_out[1] += (px * (f[fcur].ge - f[fcur].gs)) + f[fcur].gs;// + 0.5;
-            rgb_out[2] += (px * (f[fcur].be - f[fcur].bs)) + f[fcur].bs;// + 0.5;
-        }
-    }
-}
+float current_color[3] = { 1.0f, 0.0f, 0.0f };
+float change_rate = 1.0f / 128.0f;
+uint8_t move_step = 0;
+uint8_t movement = 1;
 
 void led_react_op(uint8_t fcur, uint8_t fmax, uint8_t scan, led_setup_t *f, float* rgb_out) {
     // value is the led brightness value
-    float value;
+    float lumination;
+    float to_paint[3];
     // rim lights / underglow is scan code 255
     if(scan == 255) {
-      // figure out which value currently is higher, use that instead
-      value = desired_interpolation[0][87];
-      // ignore some singular inputs to smooth out some of the flickering
-      if(value < (underglow_inc * 1.5f)) {
-        value = 0;
-      }
+      lumination = 0.1f;
+      to_paint[0] = current_color[0];
+      to_paint[1] = current_color[1];
+      to_paint[2] = current_color[2];
     } else {
-      value = desired_interpolation[read_buffer][scan];
-    }
-    /*
-    // the scan point to the left of this position
-    uint8_t r_scan = scan;
-
-    // the wiring is a bit odd, so here are special cases
-    switch(scan) {
-      case 255:
-        break;
-      case 77: // arrow up
-        r_scan = 83;
-        break;
-      case 78: // page down
-        r_scan = 71;
-        break;
-      case 79: // page up
-        r_scan = 63;
-        break;
-      case 80: // dot (is one row higher than it should be)
-        r_scan = 39;
-        break;
-      case 84: // arrow left (is one row lower)
-        r_scan = 47;
-        break;
-      default:
-        // if we're on the higher row of wiring (basically the right)
-        // side of the keyboard, we need to jump down a row
-        if(scan % 8 == 0 && scan >= 48) {
-        r_scan -= 41;
-        } else if(scan % 8 != 0) {
-            r_scan -= 1;
-        } // the remaining case here would be on the left most position,
-        // in which case we just do nothing.
+      lumination = desired_interpolation[read_buffer][scan];
+      desired_interpolation[write_buffer][scan] = lumination - desired_interpolation[5][scan] * lumination;
+      to_paint[0] = desired_interpolation[2][scan];
+      to_paint[1] = desired_interpolation[3][scan];
+      to_paint[2] = desired_interpolation[4][scan];
     }
 
-    // get your neighbours interpolation
-    float r_value = desired_interpolation[read_buffer][r_scan];
-    // now fill yourself up
-    value = max(r_value * 0.85f, value);
-    */
-    if (scan != 255) {
-      // calculate a new interpolation step
-      desired_interpolation[write_buffer][scan] = value - 0.3f * value;
-    } else {
-      // Act on LED
-      if (value > 1.0f) {
-        value = 1.0f;
-      } else if (value < (1.0f / 128.0f)) {
-        value = 1.0f / 128.0f;
-      }
-    }
-    rgb_out[0] = (f[0].rs) + value * (f[0].re - f[0].rs);
-    rgb_out[1] = (f[0].gs) + value * (f[0].ge - f[0].gs);
-    rgb_out[2] = (f[0].bs) + value * (f[0].be - f[0].bs);
+    rgb_out[0] = (f[0].rs) + to_paint[0] * lumination * (f[0].re - f[0].rs);
+    rgb_out[1] = (f[0].gs) + to_paint[1] * lumination * (f[0].ge - f[0].gs);
+    rgb_out[2] = (f[0].bs) + to_paint[2] * lumination * (f[0].be - f[0].bs);
+}
+
+void swap_color(void) {
+  if (movement == 0) {
+    move_step = (move_step + 1) % 3;
+    movement = 1;
+  } else {
+    movement = 0;
+  }
+}
+
+bool next_color(void) {
+  uint8_t index = (move_step + movement) % 3;
+  float changed_value = (movement * 2.0f - 1.0f) * change_rate + current_color[index];
+  bool has_next = changed_value <= 1.0f && changed_value >= 0.0f;
+  current_color[index] = changed_value > 1.0f ? 1.0f : changed_value < 0.0f ? 0.0f : changed_value;
+  return has_next;
 }
 
 void led_matrix_run(led_setup_t *f)
@@ -426,7 +342,11 @@ void led_matrix_run(led_setup_t *f)
           uint8_t temp = write_buffer;
           write_buffer = read_buffer;
           read_buffer = temp;
-          desired_interpolation[0][87] = max(0, desired_interpolation[0][87] - underglow_dec);
+
+          bool has_next = next_color();
+          if (!has_next) {
+            swap_color();
+          }
         }
     }
 
@@ -462,11 +382,7 @@ void led_matrix_run(led_setup_t *f)
         else
         {
             float res[3] = {0, 0, 0};
-            if(led_anim_mode) {
-              led_gradient_op(fcur, fmax, f, res);
-            } else {
-              led_react_op(fcur, fmax, led_cur->scan, f, res);
-            }
+            led_react_op(fcur, fmax, led_cur->scan, f, res);
             ro = res[0];
             go = res[1];
             bo = res[2];

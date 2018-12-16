@@ -13,7 +13,6 @@ enum ctrl_keycodes {
     L_OFF,              //LED Off
     L_T_BR,             //LED Toggle Breath Effect
     L_T_PTD,            //LED Toggle Scrolling Pattern Direction
-    L_MODE,             //LED change mode
     U_T_AUTO,           //USB Extra Port Toggle Auto Detect / Always Active
     U_T_AGCR,           //USB Toggle Automatic GCR control
     DBG_TOG,            //DEBUG Toggle On / Off
@@ -23,10 +22,6 @@ enum ctrl_keycodes {
     C_THONK,            //CUSTOM thonk URL
     C_THINK,            //CUSTOM think URL
     C_RESET,            //CUSTOM bootloader jump
-    C_INC_A,            //CUSTOM Add to Increment Value
-    C_INC_S,            //CUSTOM Subtract to Increment Value
-    C_DEC_A,            //CUSTOM Add to Decrement Value
-    C_DEC_S,            //CUSTOM Subtract to Decrement Value
     C_DUMP              //CUSTOM Dump Increment/Decrement Values via Serial
 };
 
@@ -48,7 +43,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,   KC_MPLY, KC_MSTP, KC_VOLU, \
         L_T_BR,  L_PSD,   L_BRI,   L_PSI,   KC_TRNS, C_THONK, KC_TRNS, U_T_AUTO,U_T_AGCR,KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,   KC_MPRV, KC_MNXT, KC_VOLD, \
         L_T_PTD, L_PTP,   L_BRD,   L_PTN,   KC_TRNS, C_THINK, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, \
-        KC_TRNS, L_T_MD,  L_T_ONF, KC_TRNS, KC_TRNS, KC_TRNS, TG_NKRO, L_MODE,  KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,                              KC_TRNS, \
+        KC_TRNS, L_T_MD,  L_T_ONF, KC_TRNS, KC_TRNS, KC_TRNS, TG_NKRO, KC_TRNS,  KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,                              KC_TRNS, \
         KC_TRNS, KC_TRNS, KC_TRNS,                  KC_TRNS,                             KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,            KC_TRNS, KC_TRNS, KC_TRNS \
     ),
     [2] = LAYOUT(
@@ -56,8 +51,8 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,   KC_TRNS, KC_TRNS, KC_TRNS, \
         KC_TRNS, KC_WH_U, KC_UP,   KC_WH_D, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,   C_RESET, KC_TRNS, C_DUMP,  \
         KC_TRNS, KC_LEFT, KC_DOWN, KC_RGHT, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, \
-        KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, TG_NKRO, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,                              C_INC_A, \
-        KC_TRNS, KC_TRNS, KC_TRNS,                  KC_TRNS,                             KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,            C_DEC_S, C_INC_S, C_DEC_A \
+        KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, TG_NKRO, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,                              KC_TRNS, \
+        KC_TRNS, KC_TRNS, KC_TRNS,                  KC_TRNS,                             KC_TRNS, KC_TRNS, KC_TRNS, KC_TRNS,            KC_TRNS, KC_TRNS, KC_TRNS \
     ),
     /*
     [X] = LAYOUT(
@@ -101,9 +96,6 @@ void matrix_scan_user(void) {
 #define MODS_CTRL  (keyboard_report->mods & MOD_BIT(KC_LCTL) || keyboard_report->mods & MOD_BIT(KC_RCTRL))
 #define MODS_ALT  (keyboard_report->mods & MOD_BIT(KC_LALT) || keyboard_report->mods & MOD_BIT(KC_RALT))
 
-float underglow_inc = 1.0f / 64.0f;
-float underglow_dec = 1.0f / 256.0f;
-float press_speed = 0.0f;
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     if(record->event.pressed) {
@@ -114,12 +106,19 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             uint16_t scan_code = record->event.key.row * 8 + record->event.key.col;
             // we can just modify the read_buffer, since the LEDs are set
             // from read buffer and the led job then fills the write buffer.
-            desired_interpolation[read_buffer][scan_code] = 1.0f;
-            desired_interpolation[write_buffer][scan_code] = 1.0f;
-            desired_interpolation[0][87] += underglow_inc;
+            uint32_t random_scan_code = lfsr113_Bits() % 87;
+            float random_drop_rate = (float)(lfsr113_Bits() % 5 + 5) / 100.0f;
+            desired_interpolation[read_buffer][random_scan_code] = 1.0f;
+            desired_interpolation[write_buffer][random_scan_code] = 1.0f;
+
+            desired_interpolation[2][random_scan_code] = current_color[0];
+            desired_interpolation[3][random_scan_code] = current_color[1];
+            desired_interpolation[4][random_scan_code] = current_color[2];
+            desired_interpolation[5][random_scan_code] = random_drop_rate;
+
 
             if(debug_enable) {
-                dprintf("kc=%d | sc=%d | r=%d | c=%d\r\n", keycode, scan_code, record->event.key.row, record->event.key.col);
+                dprintf("kc=%d | sc=%d | rsc=%d | r=%d | c=%d\r\n", keycode, scan_code, random_scan_code, record->event.key.row, record->event.key.col);
             }
 
             /*
@@ -206,11 +205,6 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
                 }
             }
             return false;
-        case L_MODE:
-            if(record->event.pressed) {
-               led_anim_mode = led_anim_mode ? 0 : 1;
-            }
-            return false;
         case L_T_PTD:
             if (record->event.pressed) {
                 led_animation_direction = !led_animation_direction;
@@ -277,26 +271,6 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
         case C_RESET:
             if (record->event.pressed && MODS_SHIFT && MODS_CTRL) {
                 reset_keyboard();
-            }
-            return false;
-        case C_INC_A:
-            if (record->event.pressed) {
-                underglow_inc += 0.001;
-            }
-            return false;
-        case C_INC_S:
-            if (record->event.pressed) {
-                underglow_inc -= 0.001;
-            }
-            return false;
-        case C_DEC_A:
-            if (record->event.pressed) {
-                underglow_dec += 0.0001;
-            }
-            return false;
-        case C_DEC_S:
-            if (record->event.pressed) {
-                underglow_dec -= 0.0001;
             }
             return false;
         default:
