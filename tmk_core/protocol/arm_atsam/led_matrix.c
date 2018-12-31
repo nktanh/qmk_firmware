@@ -264,7 +264,7 @@ uint8_t write_buffer = 0;
 uint8_t read_buffer = 1;
 
 float current_color[3] = { 1.0f, 0.0f, 0.0f };
-float change_rate = 1.0f / 64.0f;
+float change_rate = 1.0f / 32.0f;
 uint8_t move_step = 0;
 uint8_t movement = 1;
 
@@ -273,7 +273,8 @@ uint8_t last_used[20] = { 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
 
 void led_react_op(uint8_t fcur, uint8_t fmax, uint8_t scan, led_setup_t *f, float* rgb_out) {
     // value is the led brightness value
-    float lumination;
+    float lumination = 1.0f;
+    float spike = 1.0f;
     float to_paint[3];
     // rim lights / underglow is scan code 255
     if(scan == 255) {
@@ -281,17 +282,24 @@ void led_react_op(uint8_t fcur, uint8_t fmax, uint8_t scan, led_setup_t *f, floa
       to_paint[0] = current_color[0];
       to_paint[1] = current_color[1];
       to_paint[2] = current_color[2];
+    } else if (desired_interpolation[read_buffer][scan] < 0.00001f) {
+      desired_interpolation[write_buffer][scan] = 0;
+      desired_interpolation[read_buffer][scan] = 0;
+      lumination = 0.1f;
+      to_paint[0] = 1;
+      to_paint[1] = 1;
+      to_paint[2] = 1;
     } else {
-      lumination = desired_interpolation[read_buffer][scan];
-      desired_interpolation[write_buffer][scan] = lumination - desired_interpolation[5][scan] * lumination;
+      spike = desired_interpolation[read_buffer][scan];
+      desired_interpolation[write_buffer][scan] = spike - desired_interpolation[5][scan] * spike;
       to_paint[0] = desired_interpolation[2][scan];
       to_paint[1] = desired_interpolation[3][scan];
       to_paint[2] = desired_interpolation[4][scan];
     }
 
-    rgb_out[0] = (f[0].rs) + to_paint[0] * lumination * (f[0].re - f[0].rs);
-    rgb_out[1] = (f[0].gs) + to_paint[1] * lumination * (f[0].ge - f[0].gs);
-    rgb_out[2] = (f[0].bs) + to_paint[2] * lumination * (f[0].be - f[0].bs);
+    rgb_out[0] = (f[0].rs) + (1 - (1 - to_paint[0]) * spike) * ((lumination - 0.1f) * spike + 0.1f) * (f[0].re - f[0].rs);
+    rgb_out[1] = (f[0].gs) + (1 - (1 - to_paint[1]) * spike) * ((lumination - 0.1f) * spike + 0.1f) * (f[0].ge - f[0].gs);
+    rgb_out[2] = (f[0].bs) + (1 - (1 - to_paint[2]) * spike) * ((lumination - 0.1f) * spike + 0.1f) * (f[0].be - f[0].bs);
 }
 
 void swap_color(void) {
