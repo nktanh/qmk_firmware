@@ -121,8 +121,10 @@ extern uint8_t gcr_actual_last;
 
 extern uint8_t write_buffer;
 extern uint8_t read_buffer;
-extern float desired_interpolation[][88];
+extern float desired_interpolation[][87];
 extern float current_color[3];
+extern uint8_t last_used_index;
+extern uint8_t last_used[20];
 
 extern issi3733_led_t led_map[];
 

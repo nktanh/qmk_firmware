@@ -259,14 +259,17 @@ float breathe_mult;
 // that way. The higest scan code seems to be 156 as seen in config_led.h
 // edit: this is now a double buffer to allow for some lookup trickery on fixed
 // timed steps.
-float desired_interpolation[][88] = {{0}, {0}, {0}, {0}, {0}, {0}};
+float desired_interpolation[][87] = {{0}, {0}, {0}, {0}, {0}, {0}};
 uint8_t write_buffer = 0;
 uint8_t read_buffer = 1;
 
 float current_color[3] = { 1.0f, 0.0f, 0.0f };
-float change_rate = 1.0f / 128.0f;
+float change_rate = 1.0f / 64.0f;
 uint8_t move_step = 0;
 uint8_t movement = 1;
+
+uint8_t last_used_index = 0;
+uint8_t last_used[20] = { 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255 };
 
 void led_react_op(uint8_t fcur, uint8_t fmax, uint8_t scan, led_setup_t *f, float* rgb_out) {
     // value is the led brightness value

@@ -96,6 +96,66 @@ void matrix_scan_user(void) {
 #define MODS_CTRL  (keyboard_report->mods & MOD_BIT(KC_LCTL) || keyboard_report->mods & MOD_BIT(KC_RCTRL))
 #define MODS_ALT  (keyboard_report->mods & MOD_BIT(KC_LALT) || keyboard_report->mods & MOD_BIT(KC_RALT))
 
+void set_led_scan_code(uint16_t scan_code) {
+  float random_drop_rate = (float)(lfsr113_Bits() % 5 + 5) / 100.0f;
+  desired_interpolation[read_buffer][scan_code] = 1.0f;
+  desired_interpolation[write_buffer][scan_code] = 1.0f;
+
+  desired_interpolation[2][scan_code] = current_color[0];
+  desired_interpolation[3][scan_code] = current_color[1];
+  desired_interpolation[4][scan_code] = current_color[2];
+  desired_interpolation[5][scan_code] = random_drop_rate;
+
+  last_used[(last_used_index++) % 20] = scan_code;
+}
+
+uint16_t get_random_scan_code(void) {
+  uint32_t last_used_bit_map[3] = {0};
+  for(uint8_t i = 0; i < 20; ++i) {
+    uint8_t last_used_i = last_used[i];
+    if (last_used_i == 255) {
+      continue;
+    }
+    uint8_t localized_scan_code = last_used_i % 32;
+    uint8_t globalized_scan_code = last_used_i / 32;
+
+    if (globalized_scan_code > 2) {
+      return 0;
+      // Something is wrong here
+    }
+
+    last_used_bit_map[globalized_scan_code] |= 1UL << localized_scan_code;
+  }
+
+  uint8_t unique_last_used[20] = { 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255 };
+  signed char current_index = -1;
+  for(uint8_t i = 0; i < 87; ++i) {
+    uint8_t localized_scan_code = i % 32;
+    uint8_t globalized_scan_code = i / 32;
+    uint32_t bit = (last_used_bit_map[globalized_scan_code] >> localized_scan_code) & 1U;
+    if (bit == 1) {
+      ++current_index;
+      if (current_index < 0 || current_index > 19) {
+        return 1;
+      }
+      unique_last_used[current_index] = i;
+    }
+  }
+
+  uint8_t scan_code = lfsr113_Bits() % (87 - current_index - 1);
+
+  for(uint8_t i = 0; i <= current_index; ++i) {
+    uint8_t unique_last_used_i = unique_last_used[i];
+    if (scan_code <= unique_last_used_i) {
+      ++scan_code;
+    }
+  }
+
+  if (scan_code < 0 || scan_code > 86) {
+    return 2;
+  }
+  return scan_code;
+}
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     if(record->event.pressed) {
@@ -104,18 +164,9 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
         // do.
         if(keycode != KC_CAPS && keycode != KC_SLCK) {
             uint16_t scan_code = record->event.key.row * 8 + record->event.key.col;
-            // we can just modify the read_buffer, since the LEDs are set
-            // from read buffer and the led job then fills the write buffer.
-            uint32_t random_scan_code = lfsr113_Bits() % 87;
-            float random_drop_rate = (float)(lfsr113_Bits() % 5 + 5) / 100.0f;
-            desired_interpolation[read_buffer][random_scan_code] = 1.0f;
-            desired_interpolation[write_buffer][random_scan_code] = 1.0f;
-
-            desired_interpolation[2][random_scan_code] = current_color[0];
-            desired_interpolation[3][random_scan_code] = current_color[1];
-            desired_interpolation[4][random_scan_code] = current_color[2];
-            desired_interpolation[5][random_scan_code] = random_drop_rate;
-
+            set_led_scan_code(scan_code);
+            uint16_t random_scan_code = get_random_scan_code();
+            set_led_scan_code(random_scan_code);
 
             if(debug_enable) {
                 dprintf("kc=%d | sc=%d | rsc=%d | r=%d | c=%d\r\n", keycode, scan_code, random_scan_code, record->event.key.row, record->event.key.col);
