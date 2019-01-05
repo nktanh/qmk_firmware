@@ -111,7 +111,7 @@ void set_led_scan_code(uint16_t scan_code) {
 
 uint16_t get_random_scan_code(void) {
   uint32_t last_used_bit_map[3] = {0};
-  for(uint8_t i = 0; i < 20; ++i) {
+  for(uint8_t i = 0; i < 40; ++i) {
     uint8_t last_used_i = last_used[i];
     if (last_used_i == 255) {
       continue;
@@ -127,7 +127,7 @@ uint16_t get_random_scan_code(void) {
     last_used_bit_map[globalized_scan_code] |= 1UL << localized_scan_code;
   }
 
-  uint8_t unique_last_used[20] = { 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255 };
+  uint8_t unique_last_used[40] = { 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255 };
   signed char current_index = -1;
   for(uint8_t i = 0; i < 87; ++i) {
     uint8_t localized_scan_code = i % 32;
@@ -135,7 +135,7 @@ uint16_t get_random_scan_code(void) {
     uint32_t bit = (last_used_bit_map[globalized_scan_code] >> localized_scan_code) & 1U;
     if (bit == 1) {
       ++current_index;
-      if (current_index < 0 || current_index > 19) {
+      if (current_index < 0 || current_index > 39) {
         return 1;
       }
       unique_last_used[current_index] = i;
@@ -146,8 +146,10 @@ uint16_t get_random_scan_code(void) {
 
   for(uint8_t i = 0; i <= current_index; ++i) {
     uint8_t unique_last_used_i = unique_last_used[i];
-    if (scan_code <= unique_last_used_i) {
+    if (scan_code >= unique_last_used_i) {
       ++scan_code;
+    } else {
+      break;
     }
   }
 
