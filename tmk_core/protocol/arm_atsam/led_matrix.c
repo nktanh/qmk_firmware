@@ -264,7 +264,7 @@ uint8_t write_buffer = 0;
 uint8_t read_buffer = 1;
 
 float current_color[3] = { 1.0f, 0.0f, 0.0f };
-float change_rate = 1.0f / 32.0f;
+float change_rate = 1.0f / 128.0f;
 uint8_t move_step = 0;
 uint8_t movement = 1;
 
@@ -272,34 +272,29 @@ uint8_t last_used_index = 0;
 uint8_t last_used[20] = { 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255 };
 
 void led_react_op(uint8_t fcur, uint8_t fmax, uint8_t scan, led_setup_t *f, float* rgb_out) {
-    // value is the led brightness value
-    float lumination = 1.0f;
-    float spike = 1.0f;
-    float to_paint[3];
-    // rim lights / underglow is scan code 255
-    if(scan == 255) {
-      lumination = 0.1f;
-      to_paint[0] = current_color[0];
-      to_paint[1] = current_color[1];
-      to_paint[2] = current_color[2];
-    } else if (desired_interpolation[read_buffer][scan] < 0.00001f) {
-      desired_interpolation[write_buffer][scan] = 0;
-      desired_interpolation[read_buffer][scan] = 0;
-      lumination = 0.1f;
-      to_paint[0] = 1;
-      to_paint[1] = 1;
-      to_paint[2] = 1;
-    } else {
-      spike = desired_interpolation[read_buffer][scan];
-      desired_interpolation[write_buffer][scan] = spike - desired_interpolation[5][scan] * spike;
-      to_paint[0] = desired_interpolation[2][scan];
-      to_paint[1] = desired_interpolation[3][scan];
-      to_paint[2] = desired_interpolation[4][scan];
-    }
+  // rim lights / underglow is scan code 255
+  float range_red = f[0].re - f[0].rs;
+  float range_green = f[0].ge - f[0].gs;
+  float range_blue = f[0].be - f[0].bs;
 
-    rgb_out[0] = (f[0].rs) + (1 - (1 - to_paint[0]) * spike) * ((lumination - 0.1f) * spike + 0.1f) * (f[0].re - f[0].rs);
-    rgb_out[1] = (f[0].gs) + (1 - (1 - to_paint[1]) * spike) * ((lumination - 0.1f) * spike + 0.1f) * (f[0].ge - f[0].gs);
-    rgb_out[2] = (f[0].bs) + (1 - (1 - to_paint[2]) * spike) * ((lumination - 0.1f) * spike + 0.1f) * (f[0].be - f[0].bs);
+  if (scan != 255 && desired_interpolation[read_buffer][scan] > 0.003f) {
+    float spike = desired_interpolation[read_buffer][scan];
+    desired_interpolation[write_buffer][scan] = spike - desired_interpolation[5][scan] * spike;
+
+    rgb_out[0] = f[0].rs + range_red * (current_color[0] * (1 - spike) + (1 - desired_interpolation[2][scan]) * spike * 3) / (spike * 2 + 1);
+    rgb_out[1] = f[0].gs + range_green * (current_color[1] * (1 - spike) + (1 - desired_interpolation[3][scan]) * spike * 3) / (spike * 2 + 1);
+    rgb_out[2] = f[0].bs + range_blue * (current_color[2] * (1 - spike) + (1 - desired_interpolation[4][scan]) * spike * 3) / (spike * 2 + 1);
+    return;
+  }
+
+  if (scan != 255) {
+    desired_interpolation[write_buffer][scan] = 0;
+    desired_interpolation[read_buffer][scan] = 0;
+  }
+
+  rgb_out[0] = f[0].rs + range_red * current_color[0];
+  rgb_out[1] = f[0].gs + range_green * current_color[1];
+  rgb_out[2] = f[0].bs + range_blue * current_color[2];
 }
 
 void swap_color(void) {
@@ -314,7 +309,7 @@ void swap_color(void) {
 bool next_color(void) {
   uint8_t index = (move_step + movement) % 3;
   float changed_value = (movement * 2.0f - 1.0f) * change_rate + current_color[index];
-  bool has_next = changed_value <= 1.0f && changed_value >= 0.0f;
+  bool has_next = changed_value < 1.0f && changed_value > 0.0f;
   current_color[index] = changed_value > 1.0f ? 1.0f : changed_value < 0.0f ? 0.0f : changed_value;
   return has_next;
 }
@@ -346,14 +341,12 @@ void led_matrix_run(led_setup_t *f)
             if (breathe_mult > 1) breathe_mult = 1;
             else if (breathe_mult < 0) breathe_mult = 0;
         }
-        // we only buffer swap occasionally, to make animations look not so
-        // instantanously
-        if(disp.frame % 5 == 0) {
+
+        if (disp.frame % 5 == 0) {
           // buffer swap when we render a new frame (and only then!)
           uint8_t temp = write_buffer;
           write_buffer = read_buffer;
           read_buffer = temp;
-
           bool has_next = next_color();
           if (!has_next) {
             swap_color();

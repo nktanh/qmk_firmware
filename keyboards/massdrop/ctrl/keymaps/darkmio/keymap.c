@@ -97,7 +97,7 @@ void matrix_scan_user(void) {
 #define MODS_ALT  (keyboard_report->mods & MOD_BIT(KC_LALT) || keyboard_report->mods & MOD_BIT(KC_RALT))
 
 void set_led_scan_code(uint16_t scan_code) {
-  float random_drop_rate = (float)(lfsr113_Bits() % 10 + 7) / 100.0f;
+  float random_drop_rate = (float)(lfsr113_Bits() % 40 + 40) / 1000.0f;
   desired_interpolation[read_buffer][scan_code] = 1.0f;
   desired_interpolation[write_buffer][scan_code] = 1.0f;
 
