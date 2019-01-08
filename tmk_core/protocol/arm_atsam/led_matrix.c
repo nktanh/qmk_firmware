@@ -281,20 +281,21 @@ void led_react_op(uint8_t fcur, uint8_t fmax, uint8_t scan, led_setup_t *f, floa
     float spike = desired_interpolation[read_buffer][scan];
     desired_interpolation[write_buffer][scan] = spike - desired_interpolation[5][scan] * spike;
 
-    rgb_out[0] = f[0].rs + range_red * (current_color[0] * (1 - spike) + (1 - desired_interpolation[2][scan]) * spike * 3) / (spike * 2 + 1);
-    rgb_out[1] = f[0].gs + range_green * (current_color[1] * (1 - spike) + (1 - desired_interpolation[3][scan]) * spike * 3) / (spike * 2 + 1);
-    rgb_out[2] = f[0].bs + range_blue * (current_color[2] * (1 - spike) + (1 - desired_interpolation[4][scan]) * spike * 3) / (spike * 2 + 1);
+    rgb_out[0] = f[0].rs + range_red * ( 1 - desired_interpolation[2][scan]) * spike;
+    rgb_out[1] = f[0].gs + range_green * ( 1 - desired_interpolation[3][scan]) * spike;
+    rgb_out[2] = f[0].bs + range_blue *  ( 1 - desired_interpolation[4][scan]) * spike;
     return;
   }
 
   if (scan != 255) {
     desired_interpolation[write_buffer][scan] = 0;
     desired_interpolation[read_buffer][scan] = 0;
+  } else {
+    rgb_out[0] = f[0].rs + range_red * current_color[0];
+    rgb_out[1] = f[0].gs + range_green * current_color[1];
+    rgb_out[2] = f[0].bs + range_blue * current_color[2];
   }
 
-  rgb_out[0] = f[0].rs + range_red * current_color[0];
-  rgb_out[1] = f[0].gs + range_green * current_color[1];
-  rgb_out[2] = f[0].bs + range_blue * current_color[2];
 }
 
 void swap_color(void) {
