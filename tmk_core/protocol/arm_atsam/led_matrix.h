@@ -112,6 +112,12 @@ typedef struct led_setup_s {
   uint8_t end;      //Set to signal end of the setup
 } led_setup_t;
 
+typedef struct {
+  float color[3];
+  uint8_t move_step;
+  uint8_t movement;
+} halo_color;
+
 extern issi3733_driver_t issidrv[ISSI3733_DRIVER_COUNT];
 
 extern uint8_t gcr_desired;
@@ -122,7 +128,7 @@ extern uint8_t gcr_actual_last;
 extern uint8_t write_buffer;
 extern uint8_t read_buffer;
 extern float desired_interpolation[][87];
-extern float current_color[3];
+extern halo_color current_color;
 extern uint8_t last_used_index;
 extern uint8_t last_used[40];
 
@@ -147,5 +153,8 @@ void led_matrix_run(led_setup_t *f);
 void led_matrix_task(void);
 
 void gcr_compute(void);
+
+void next_color(halo_color* color, float change_rate);
+void swap_color(halo_color* color);
 
 #endif //_LED_MATRIX_H_

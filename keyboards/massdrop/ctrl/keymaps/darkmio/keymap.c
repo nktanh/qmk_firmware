@@ -96,14 +96,14 @@ void matrix_scan_user(void) {
 #define MODS_CTRL  (keyboard_report->mods & MOD_BIT(KC_LCTL) || keyboard_report->mods & MOD_BIT(KC_RCTRL))
 #define MODS_ALT  (keyboard_report->mods & MOD_BIT(KC_LALT) || keyboard_report->mods & MOD_BIT(KC_RALT))
 
-void set_led_scan_code(uint16_t scan_code) {
+void set_led_scan_code(uint16_t scan_code, halo_color* color) {
   float random_drop_rate = (float)(lfsr113_Bits() % 40 + 40) / 1000.0f;
   desired_interpolation[read_buffer][scan_code] = 1.0f;
   desired_interpolation[write_buffer][scan_code] = 1.0f;
 
-  desired_interpolation[2][scan_code] = current_color[0];
-  desired_interpolation[3][scan_code] = current_color[1];
-  desired_interpolation[4][scan_code] = current_color[2];
+  desired_interpolation[2][scan_code] = color->color[0];
+  desired_interpolation[3][scan_code] = color->color[1];
+  desired_interpolation[4][scan_code] = color->color[2];
   desired_interpolation[5][scan_code] = random_drop_rate;
 
   last_used[(last_used_index++) % 20] = scan_code;
@@ -166,9 +166,16 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
         // do.
         if(keycode != KC_CAPS && keycode != KC_SLCK) {
             uint16_t scan_code = record->event.key.row * 8 + record->event.key.col;
-            set_led_scan_code(scan_code);
+            halo_color cloned_color = current_color;
+            set_led_scan_code(scan_code, &cloned_color);
+
             uint16_t random_scan_code = get_random_scan_code();
-            set_led_scan_code(random_scan_code);
+            next_color(&cloned_color, 0.3f);
+            set_led_scan_code(random_scan_code, &cloned_color);
+
+            random_scan_code = get_random_scan_code();
+            next_color(&cloned_color, 0.3f);
+            set_led_scan_code(random_scan_code, &cloned_color);
 
             if(debug_enable) {
                 dprintf("kc=%d | sc=%d | rsc=%d | r=%d | c=%d\r\n", keycode, scan_code, random_scan_code, record->event.key.row, record->event.key.col);

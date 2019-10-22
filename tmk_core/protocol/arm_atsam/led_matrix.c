@@ -263,10 +263,12 @@ float desired_interpolation[][87] = {{0}, {0}, {0}, {0}, {0}, {0}};
 uint8_t write_buffer = 0;
 uint8_t read_buffer = 1;
 
-float current_color[3] = { 1.0f, 0.0f, 0.0f };
+halo_color current_color = {
+  .color = { 1.0f, 0.0f, 0.0f },
+  .move_step = 0,
+  .movement = 1
+};
 float change_rate = 1.0f / 128.0f;
-uint8_t move_step = 0;
-uint8_t movement = 1;
 
 uint8_t last_used_index = 0;
 uint8_t last_used[40] = { 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255 };
@@ -291,28 +293,36 @@ void led_react_op(uint8_t fcur, uint8_t fmax, uint8_t scan, led_setup_t *f, floa
     desired_interpolation[write_buffer][scan] = 0;
     desired_interpolation[read_buffer][scan] = 0;
   } else {
-    rgb_out[0] = f[0].rs + range_red * current_color[0];
-    rgb_out[1] = f[0].gs + range_green * current_color[1];
-    rgb_out[2] = f[0].bs + range_blue * current_color[2];
+    rgb_out[0] = f[0].rs + range_red * current_color.color[0];
+    rgb_out[1] = f[0].gs + range_green * current_color.color[1];
+    rgb_out[2] = f[0].bs + range_blue * current_color.color[2];
   }
 
 }
 
-void swap_color(void) {
-  if (movement == 0) {
-    move_step = (move_step + 1) % 3;
-    movement = 1;
+void swap_color(halo_color* color) {
+  if (color->movement == 0) {
+    color->move_step = (color->move_step + 1) % 3;
+    color->movement = 1;
   } else {
-    movement = 0;
+    color->movement = 0;
   }
 }
 
-bool next_color(void) {
-  uint8_t index = (move_step + movement) % 3;
-  float changed_value = (movement * 2.0f - 1.0f) * change_rate + current_color[index];
+void next_color(halo_color* color, float change_rate) {
+  uint8_t index = (color->move_step + color->movement) % 3;
+  float changed_value = (color->movement * 2.0f - 1.0f) * change_rate + color->color[index];
   bool has_next = changed_value < 1.0f && changed_value > 0.0f;
-  current_color[index] = changed_value > 1.0f ? 1.0f : changed_value < 0.0f ? 0.0f : changed_value;
-  return has_next;
+  color->color[index] = changed_value > 1.0f ? 1.0f : changed_value < 0.0f ? 0.0f : changed_value;
+  if (!has_next) {
+    swap_color(color);
+    float remaining = (changed_value <= 0.0f ? 0.0f : 1.0f) - changed_value;
+    if (remaining > 1e-5) {
+      uint8_t new_index = (color->move_step + color->movement) % 3;
+      float carried_value = remaining + color->color[new_index];
+      color->color[new_index] = carried_value > 1.0f ? 1.0f : carried_value < 0.0f ? 0.0f : carried_value;
+    }
+  }
 }
 
 void led_matrix_run(led_setup_t *f)
@@ -348,10 +358,7 @@ void led_matrix_run(led_setup_t *f)
           uint8_t temp = write_buffer;
           write_buffer = read_buffer;
           read_buffer = temp;
-          bool has_next = next_color();
-          if (!has_next) {
-            swap_color();
-          }
+          next_color(&current_color, change_rate);
         }
     }
 
