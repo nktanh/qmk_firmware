@@ -1,16 +1,13 @@
 /*
 Copyright 2018 Massdrop Inc.
-
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 2 of the License, or
 (at your option) any later version.
-
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
-
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
@@ -18,6 +15,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "arm_atsam_protocol.h"
 #include "tmk_core/common/led.h"
 #include <string.h>
+#include <math.h>
 
 void SERCOM1_0_Handler( void )
 {
@@ -257,22 +255,89 @@ issi3733_led_t *led_cur;
 uint8_t led_per_run = 15;
 float breathe_mult;
 
+// this has far more entries than it needs, but it's far easier to linearize
+// that way. The higest scan code seems to be 156 as seen in config_led.h
+// edit: this is now a double buffer to allow for some lookup trickery on fixed
+// timed steps.
+float desired_interpolation[][87] = {{0}, {0}, {0}, {0}, {0}, {0}};
+uint8_t write_buffer = 0;
+uint8_t read_buffer = 1;
+
+halo_color current_color = {
+  .color = { 1.0f, 0.0f, 0.0f },
+  .move_step = 0,
+  .movement = 1
+};
+float change_rate = 1.0f / 128.0f;
+
+uint8_t last_used_index = 0;
+uint8_t last_used[40] = { 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255 };
+
+void led_react_op(uint8_t fcur, uint8_t fmax, uint8_t scan, led_setup_t *f, float* rgb_out) {
+  // rim lights / underglow is scan code 255
+  float range_red = f[0].re - f[0].rs;
+  float range_green = f[0].ge - f[0].gs;
+  float range_blue = f[0].be - f[0].bs;
+
+  if (scan != 255 && desired_interpolation[read_buffer][scan] > 0.003f) {
+    float spike = desired_interpolation[read_buffer][scan];
+    desired_interpolation[write_buffer][scan] = spike - desired_interpolation[5][scan] * spike;
+
+    rgb_out[0] = f[0].rs + range_red * ( 1 - desired_interpolation[2][scan]) * spike;
+    rgb_out[1] = f[0].gs + range_green * ( 1 - desired_interpolation[3][scan]) * spike;
+    rgb_out[2] = f[0].bs + range_blue *  ( 1 - desired_interpolation[4][scan]) * spike;
+    return;
+  }
+
+  if (scan != 255) {
+    desired_interpolation[write_buffer][scan] = 0;
+    desired_interpolation[read_buffer][scan] = 0;
+  } else {
+    rgb_out[0] = f[0].rs + range_red * current_color.color[0];
+    rgb_out[1] = f[0].gs + range_green * current_color.color[1];
+    rgb_out[2] = f[0].bs + range_blue * current_color.color[2];
+  }
+
+}
+
+void swap_color(halo_color* color) {
+  if (color->movement == 0) {
+    color->move_step = (color->move_step + 1) % 3;
+    color->movement = 1;
+  } else {
+    color->movement = 0;
+  }
+}
+
+void next_color(halo_color* color, float change_rate) {
+  uint8_t index = (color->move_step + color->movement) % 3;
+  float changed_value = (color->movement * 2.0f - 1.0f) * change_rate + color->color[index];
+  bool has_next = changed_value < 1.0f && changed_value > 0.0f;
+  color->color[index] = changed_value > 1.0f ? 1.0f : changed_value < 0.0f ? 0.0f : changed_value;
+  if (!has_next) {
+    swap_color(color);
+    float remaining = (changed_value <= 0.0f ? 0.0f : 1.0f) - changed_value;
+    if (remaining > 1e-5) {
+      uint8_t new_index = (color->move_step + color->movement) % 3;
+      float carried_value = remaining + color->color[new_index];
+      color->color[new_index] = carried_value > 1.0f ? 1.0f : carried_value < 0.0f ? 0.0f : carried_value;
+    }
+  }
+}
+
 __attribute__ ((weak))
 void led_matrix_run(void)
 {
     float ro;
     float go;
     float bo;
-    float px;
     uint8_t led_this_run = 0;
     led_setup_t *f = (led_setup_t*)led_setups[led_animation_id];
 
     if (led_cur == 0) //Denotes start of new processing cycle in the case of chunked processing
     {
         led_cur = led_map;
-
         disp.frame += 1;
-
         breathe_mult = 1;
 
         if (led_animation_breathing)
@@ -288,6 +353,14 @@ void led_matrix_run(void)
             breathe_mult = 0.000015 * led_animation_breathe_cur * led_animation_breathe_cur;
             if (breathe_mult > 1) breathe_mult = 1;
             else if (breathe_mult < 0) breathe_mult = 0;
+        }
+
+        if (disp.frame % 5 == 0) {
+          // buffer swap when we render a new frame (and only then!)
+          uint8_t temp = write_buffer;
+          write_buffer = read_buffer;
+          read_buffer = temp;
+          next_color(&current_color, change_rate);
         }
     }
 
@@ -322,64 +395,11 @@ void led_matrix_run(void)
         }
         else
         {
-            //Act on LED
-            for (fcur = 0; fcur < fmax; fcur++)
-            {
-                px = led_cur->px;
-                float pxmod;
-                pxmod = (float)(disp.frame % (uint32_t)(1000.0f / led_animation_speed)) / 10.0f * led_animation_speed;
-
-                //Add in any moving effects
-                if ((!led_animation_direction && f[fcur].ef & EF_SCR_R) || (led_animation_direction && (f[fcur].ef & EF_SCR_L)))
-                {
-                    pxmod *= 100.0f;
-                    pxmod = (uint32_t)pxmod % 10000;
-                    pxmod /= 100.0f;
-
-                    px -= pxmod;
-
-                    if (px > 100) px -= 100;
-                    else if (px < 0) px += 100;
-                }
-                else if ((!led_animation_direction && f[fcur].ef & EF_SCR_L) || (led_animation_direction && (f[fcur].ef & EF_SCR_R)))
-                {
-                    pxmod *= 100.0f;
-                    pxmod = (uint32_t)pxmod % 10000;
-                    pxmod /= 100.0f;
-                    px += pxmod;
-
-                    if (px > 100) px -= 100;
-                    else if (px < 0) px += 100;
-                }
-
-                //Check if LED's px is in current frame
-                if (px < f[fcur].hs) continue;
-                if (px > f[fcur].he) continue;
-                //note: < 0 or > 100 continue
-
-                //Calculate the px within the start-stop percentage for color blending
-                px = (px - f[fcur].hs) / (f[fcur].he - f[fcur].hs);
-
-                //Add in any color effects
-                if (f[fcur].ef & EF_OVER)
-                {
-                    ro = (px * (f[fcur].re - f[fcur].rs)) + f[fcur].rs;// + 0.5;
-                    go = (px * (f[fcur].ge - f[fcur].gs)) + f[fcur].gs;// + 0.5;
-                    bo = (px * (f[fcur].be - f[fcur].bs)) + f[fcur].bs;// + 0.5;
-                }
-                else if (f[fcur].ef & EF_SUBTRACT)
-                {
-                    ro -= (px * (f[fcur].re - f[fcur].rs)) + f[fcur].rs;// + 0.5;
-                    go -= (px * (f[fcur].ge - f[fcur].gs)) + f[fcur].gs;// + 0.5;
-                    bo -= (px * (f[fcur].be - f[fcur].bs)) + f[fcur].bs;// + 0.5;
-                }
-                else
-                {
-                    ro += (px * (f[fcur].re - f[fcur].rs)) + f[fcur].rs;// + 0.5;
-                    go += (px * (f[fcur].ge - f[fcur].gs)) + f[fcur].gs;// + 0.5;
-                    bo += (px * (f[fcur].be - f[fcur].bs)) + f[fcur].bs;// + 0.5;
-                }
-            }
+            float res[3] = {0, 0, 0};
+            led_react_op(fcur, fmax, led_cur->scan, f, res);
+            ro = res[0];
+            go = res[1];
+            bo = res[2];
         }
 
         //Clamp values 0-255
@@ -514,4 +534,3 @@ void led_matrix_task(void)
         //m15_on; //debug profiling
     }
 }
-
